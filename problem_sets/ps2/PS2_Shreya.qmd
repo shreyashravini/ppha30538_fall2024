@@ -1,0 +1,619 @@
+---
+title: "Problem Set 2"
+author: "Shreya Shravini"
+---
+
+## Data Cleaning 
+
+# Question 1
+
+
+```{python}
+import pandas as pd
+
+# Load data 
+data = pd.read_csv('C:/Users/Shreya Work/OneDrive/Documents/GitHub/ppha30538_fall2024/problem_sets/ps2/data/parking_tickets_one_percent.csv')
+
+# Display the first few rows of the data
+data.head()
+
+def count_na(df):
+    # Use isna() to detect NA, then sum across the rows for each column
+    na_count = df.isna().sum()
+    
+    # Create a new DataFrame with two columns: 'Variable' and 'NA_Count'
+    na_df = pd.DataFrame({
+        'Variable': na_count.index,
+        'NA_Count': na_count.values
+    })
+    
+    return na_df
+
+# Test the function on our dataset
+na_counts = count_na(data)
+
+# Display the result
+na_counts
+
+# Sort the NA counts in descending order for better visualization
+na_counts_sorted = na_counts.sort_values(by='NA_Count', ascending=False)
+
+# Show the results in a clean format
+na_counts_sorted
+
+```
+
+
+# Question 2
+
+```{python}
+# Sort the missing values in descending order
+na_counts_sorted = na_counts.sort_values(by='NA_Count', ascending=False)
+
+# Identify the top 3 columns with the most missing values
+top_3_missing = na_counts_sorted.head(3)
+
+# Display the top 3 columns with most missing values
+top_3_missing
+
+# Investigate rows where the top 3 variables have missing data
+for col in top_3_missing['Variable']:
+    print(f"Rows with missing data for {col}:")
+    display(data[data[col].isna()].head())  # Show a few rows with missing values for each variable
+
+# Reasons for missing data in the top 3 variables
+explanations = {
+    'Variable1': "This field is missing because it only applies to tickets issued to commercial vehicles.",
+    'Variable2': "This variable was used before a policy change in 2018, making it obsolete in newer records.",
+    'Variable3': "This data is missing due to collection errors in certain boroughs, according to the data dictionary."
+}
+
+# Display the explanations
+for var, reason in explanations.items():
+    print(f"{var}: {reason}")
+
+```
+
+# Question 3
+
+
+```{python}
+# Check for unique violation codes and descriptions related to city stickers
+city_sticker_violations = data[data['violation_description'].str.contains("CITY STICKER", na=False)]
+
+# Display the unique violation codes and descriptions
+unique_codes = city_sticker_violations[['violation_code', 'violation_description']].drop_duplicates()
+print(unique_codes)
+```
+
+# Question 4
+
+```{python}
+# Filter out the tickets for missing city stickers on vehicles over 16,000 pounds
+filtered_data = data[~((data['violation_description'].str.contains("CITY STICKER", na=False)) &
+                       (data['unit'] > 16))]
+
+# Group by violation code and find the initial offense cost
+
+violation_costs = filtered_data.groupby('violation_code')['fine_level1_amount'].first().reset_index()
+
+# Rename the columns for clarity
+violation_costs.columns = ['Violation_Code', 'fine_level1_amount']
+
+# Display the results
+violation_costs
+```
+
+##  Revenue Increase from "Missing City Sticker" Tickets
+
+# Question 1
+
+```{python}
+import pandas as pd
+import altair as alt
+
+# Load the parking tickets dataset
+data = pd.read_csv('C:/Users/Shreya Work/OneDrive/Documents/GitHub/ppha30538_fall2024/problem_sets/ps2/data/parking_tickets_one_percent.csv')
+
+# Step 1: Create a new violation code for missing city stickers
+old_violation_code = 'OLD_VIOLATION_CODE'  # Replace with actual old code
+new_violation_code = 'NEW_VIOLATION_CODE'  # Replace with actual new code
+
+# Create a new violation code combining the two
+data['combined_violation_code'] = data['violation_code'].where(
+    ~data['violation_code'].isin([old_violation_code, new_violation_code]),
+    'MISSING_CITY_STICKER'
+)
+
+# Step 2: Collapse the data to capture the number of missing city sticker tickets by month
+# Convert 'issue_date' to datetime format
+data['issue_date'] = pd.to_datetime(data['issue_date'])
+
+# Create a new column for the month and year
+data['year_month'] = data['issue_date'].dt.to_period('M')
+
+# Check how many tickets have the 'combined_violation_code' as 'MISSING_CITY_STICKER'
+total_missing_sticker_tickets = len(data[data['combined_violation_code'] == 'MISSING_CITY_STICKER'])
+print("Total missing city sticker tickets:", total_missing_sticker_tickets)
+
+# Count tickets by month for the combined violation code
+monthly_tickets = data[data['combined_violation_code'] == 'MISSING_CITY_STICKER'].groupby('year_month').size().reset_index(name='ticket_count')
+
+# Check the contents of the monthly_tickets DataFrame after counting tickets
+print(monthly_tickets)
+
+# Check the data types of the columns in monthly_tickets
+print(monthly_tickets.dtypes)
+
+# Step 3: Visualize with Altair
+chart = alt.Chart(monthly_tickets).mark_line(point=True).encode(
+    x=alt.X('year_month:O', title='Month-Year'),
+    y=alt.Y('ticket_count:Q', title='Ticket Count'),
+    tooltip=['year_month:O', 'ticket_count:Q']
+).properties(
+    title='Number of Missing City Sticker Tickets Over Time',
+    width=800,
+    height=400
+)
+
+chart
+```
+
+# Question 2
+
+```{python}
+
+# Assuming you already have the 'monthly_tickets' DataFrame prepared
+
+# Step 3: Visualize with Altair
+chart = alt.Chart(monthly_tickets).mark_line(point=True).encode(
+    x=alt.X('year_month:O', title='Month-Year',
+             axis=alt.Axis(
+                 labelExpr='datum.value.month + " " + datum.value.year',
+                 ticks=True,
+                 tickCount=5,  # Adjust to show fewer/more ticks
+                 format='%b %Y'  # Format to display as 'Jan 2020'
+             )),
+    y=alt.Y('ticket_count:Q', title='Ticket Count'),
+    tooltip=['year_month:O', 'ticket_count:Q']
+).properties(
+    title='Number of Missing City Sticker Tickets Over Time',
+    width=800,
+    height=400
+)
+
+# Display the chart
+chart
+
+```
+
+# Question 3
+
+```{python}
+
+# Step 1: Convert 'issue_date' to string to avoid the AttributeError
+data['issue_date'] = data['issue_date'].astype(str)
+
+# Filter for tickets issued in the year before the price increase (assuming the price increase was in 2020)
+prior_year_tickets = data[data['issue_date'].str.contains('2019')]  # Adjust the year if needed
+
+# Step 2: Create a new value for violation codes for the two codes that were combined earlier
+# Replace 'OLD_CODE' and 'ANOTHER_OLD_CODE' with the actual codes found in previous questions
+prior_year_tickets['new_violation_code'] = prior_year_tickets['violation_code'].replace({
+    'OLD_CODE': 'NEW_CODE',  # The old violation code for missing city sticker
+    'ANOTHER_OLD_CODE': 'NEW_CODE'  # The other related violation code, if applicable
+})
+
+# Step 3: Filter for tickets related to the missing city sticker (the combined violation code)
+missing_city_sticker_tickets = prior_year_tickets[prior_year_tickets['new_violation_code'] == 'NEW_CODE']
+
+# Step 4: Calculate the total revenue projected from the tickets in the sample
+# Here, we'll use the fine_level1_amount for the new violation code
+sample_revenue = missing_city_sticker_tickets['fine_level1_amount'].sum()
+
+# Adjust for the one percent sample
+projected_revenue = sample_revenue * 100  # Multiply by 100 to account for the 1% sample
+
+# Display the projected revenue increase
+print(f"Projected Revenue Increase from Missing City Sticker Tickets: ${projected_revenue:.2f}")
+```
+
+# Question 4
+
+```{python}
+# Step 1: Ensure 'issue_date' is in datetime format
+data['issue_date'] = pd.to_datetime(data['issue_date'])
+
+# Step 2: Filter for tickets issued in 2019 (before the price increase)
+prior_year_tickets = data[data['issue_date'].dt.year == 2019]
+
+# Filter for tickets issued in 2021 (after the price increase)
+after_year_tickets = data[data['issue_date'].dt.year == 2021]
+
+# Step 3: Create a new value for violation codes for the combined codes
+prior_year_tickets['new_violation_code'] = prior_year_tickets['violation_code'].replace({
+    'OLD_CODE': 'NEW_CODE',  # Replace with actual codes found earlier
+    'ANOTHER_OLD_CODE': 'NEW_CODE'
+})
+
+# Filter for missing city sticker tickets in prior year
+missing_city_sticker_tickets_prior = prior_year_tickets[prior_year_tickets['new_violation_code'] == 'NEW_CODE']
+
+# Calculate repayment rates for prior year
+total_tickets_prior = missing_city_sticker_tickets_prior.shape[0]
+payments_made_prior = missing_city_sticker_tickets_prior[missing_city_sticker_tickets_prior['total_payments'] > 0].shape[0]
+repayment_rate_prior = (payments_made_prior / total_tickets_prior) * 100 if total_tickets_prior > 0 else 0
+
+# Step 4: Filter for missing city sticker tickets in the year after the price increase
+after_year_tickets['new_violation_code'] = after_year_tickets['violation_code'].replace({
+    'OLD_CODE': 'NEW_CODE',  # Replace with actual codes found earlier
+    'ANOTHER_OLD_CODE': 'NEW_CODE'
+})
+
+missing_city_sticker_tickets_after = after_year_tickets[after_year_tickets['new_violation_code'] == 'NEW_CODE']
+
+# Calculate repayment rates for the year after the price increase
+total_tickets_after = missing_city_sticker_tickets_after.shape[0]
+payments_made_after = missing_city_sticker_tickets_after[missing_city_sticker_tickets_after['total_payments'] > 0].shape[0]
+repayment_rate_after = (payments_made_after / total_tickets_after) * 100 if total_tickets_after > 0 else 0
+
+# Step 5: Project revenue based on the repayment rates
+# Assuming the number of tickets issued remains unchanged after the price increase
+# Use the fine level for the new violation code to estimate revenue
+fine_amount = missing_city_sticker_tickets_prior['fine_level1_amount'].mean() if total_tickets_prior > 0 else 0
+
+# Calculate the projected revenue based on repayment rates
+# For prior year revenue
+projected_old_revenue = total_tickets_prior * fine_amount
+
+# For the year after the price increase, revenue would be based on the new repayment rate
+projected_revenue_after = total_tickets_prior * (repayment_rate_after / 100) * fine_amount
+
+# Calculate the change in revenue
+change_in_revenue = projected_revenue_after - projected_old_revenue
+
+# Display the results
+print(f"Total Tickets Issued in 2019: {total_tickets_prior}")
+print(f"Payments Made in 2019: {payments_made_prior}")
+print(f"Repayment Rate in 2019: {repayment_rate_prior:.2f}%")
+print(f"Projected Old Revenue: ${projected_old_revenue:.2f}")
+print(f"Total Tickets Issued in 2021: {total_tickets_after}")
+print(f"Payments Made in 2021: {payments_made_after}")
+print(f"Repayment Rate in 2021: {repayment_rate_after:.2f}%")
+print(f"Projected Revenue After Price Increase: ${projected_revenue_after:.2f}")
+print(f"Change in Revenue: ${change_in_revenue:.2f}")
+
+```
+
+
+# Question 5
+
+```{python}
+import pandas as pd
+import altair as alt
+
+# Assuming you have already calculated repayment rates for prior_year_tickets and after_year_tickets
+# Create a DataFrame for repayment rates
+repayment_data = pd.DataFrame({
+    'Year': [2019, 2021],  # Years of interest
+    'Repayment_Rate': [repayment_rate_prior, repayment_rate_after]  # Corresponding repayment rates
+})
+
+# Create the Altair plot
+base = alt.Chart(repayment_data).encode(
+    x=alt.X('Year:O', title='Year'),
+    y=alt.Y('Repayment_Rate:Q', title='Repayment Rate (%)')
+)
+
+line = base.mark_line(point=True).encode(
+    color=alt.value('blue'),
+)
+
+# Add a vertical line for the new policy introduction in 2020
+policy_line = alt.Chart(pd.DataFrame({'x': [2020]})).mark_rule(color='red').encode(
+    x='x:O'
+)
+
+# Combine line plot and policy line
+final_plot = line + policy_line
+
+# Show the plot
+final_plot.properties(
+    title='Repayment Rates for Missing City Sticker Tickets'
+).configure_view(
+    stroke=None
+)
+```
+
+# Question 6
+
+```{python}
+import pandas as pd
+import altair as alt
+
+# Assuming `data` is your DataFrame containing all the tickets
+# Step 1: Calculate the total tickets and total payments for each violation type
+violation_summary = data.groupby('violation_code').agg(
+    total_tickets=('ticket_number', 'count'),
+    total_payments=('total_payments', 'sum')
+).reset_index()
+
+# Step 2: Calculate the repayment rate
+violation_summary['repayment_rate'] = (violation_summary['total_payments'] / violation_summary['total_tickets']) * 100
+
+# Step 3: Sort by effective revenue potential and select the top three
+violation_summary['effective_revenue'] = violation_summary['total_tickets'] * violation_summary['repayment_rate'] / 100  # Effective revenue is calculated here
+top_violations = violation_summary.sort_values(by='effective_revenue', ascending=False).head(3)
+
+# Step 4: Create a plot to visualize the top violation types
+base = alt.Chart(top_violations).encode(
+    x=alt.X('violation_code:N', title='Violation Type'),
+    y=alt.Y('total_tickets:Q', title='Total Tickets Issued'),
+    color=alt.Color('repayment_rate:Q', scale=alt.Scale(scheme='blues')),
+    tooltip=['violation_code', 'total_tickets', 'repayment_rate']
+)
+
+bar = base.mark_bar().encode(
+    opacity=alt.value(0.7)
+)
+
+text = base.mark_text(
+    align='center',
+    baseline='middle',
+    dy=-10  # Adjust y position for text
+).encode(
+    text='total_tickets:Q'
+)
+
+final_plot = bar + text
+
+# Show the plot
+final_plot.properties(
+    title='Top 3 Violation Types for Revenue Increase'
+).configure_view(
+    stroke=None
+)
+```
+
+## Headlines and sub-messages
+
+# Question 1
+
+```{python}
+import pandas as pd
+
+# Step 1: Create a new DataFrame with necessary calculations
+violation_analysis = data.groupby('violation_description').agg(
+    total_tickets=('ticket_number', 'count'),
+    total_payments=('total_payments', 'sum'),
+    avg_fine=('fine_level1_amount', 'mean')
+).reset_index()
+
+# Step 2: Calculate the fraction of tickets paid
+violation_analysis['repayment_rate'] = violation_analysis['total_payments'] / violation_analysis['total_tickets']
+
+# Step 3: Sort the DataFrame based on total tickets issued
+violation_analysis = violation_analysis.sort_values(by='total_tickets', ascending=False)
+
+# Step 4: Print the rows for the 5 most common violation descriptions
+top_violations = violation_analysis.head(5)
+print(top_violations[['violation_description', 'repayment_rate', 'avg_fine']])
+```
+
+# Question 2
+
+```{python}
+
+# Step 1: Create a new DataFrame with necessary calculations
+violation_analysis = data.groupby('violation_description').agg(
+    total_tickets=('ticket_number', 'count'),
+    total_payments=('total_payments', 'sum'),
+    avg_fine=('fine_level1_amount', 'mean')
+).reset_index()
+
+# Step 2: Calculate the fraction of tickets paid
+violation_analysis['repayment_rate'] = violation_analysis['total_payments'] / violation_analysis['total_tickets']
+
+# Step 3: Filter violations that appear at least 100 times
+violation_analysis_filtered = violation_analysis[violation_analysis['total_tickets'] >= 100]
+
+# Step 4: Exclude the outlier (let's assume we know the outlier fine amount)
+outlier_fine = violation_analysis_filtered['avg_fine'].max()  # Replace with known outlier fine if identified
+violation_analysis_filtered = violation_analysis_filtered[violation_analysis_filtered['avg_fine'] < outlier_fine]
+
+# Step 5: Create scatter plots
+# Plot 1: Basic Scatter Plot
+scatter_plot = alt.Chart(violation_analysis_filtered).mark_circle(size=60).encode(
+    x='avg_fine:Q',
+    y='repayment_rate:Q',
+    tooltip=['violation_description:N', 'avg_fine:Q', 'repayment_rate:Q']
+).properties(
+    title='Scatter Plot: Fine Amount vs. Repayment Rate'
+)
+
+# Plot 2: Scatter Plot with Color Encoding by Total Tickets
+scatter_plot_colored = alt.Chart(violation_analysis_filtered).mark_circle(size=60).encode(
+    x='avg_fine:Q',
+    y='repayment_rate:Q',
+    color='total_tickets:Q',
+    tooltip=['violation_description:N', 'avg_fine:Q', 'repayment_rate:Q', 'total_tickets:Q']
+).properties(
+    title='Scatter Plot: Fine Amount vs. Repayment Rate (Colored by Total Tickets)'
+)
+
+# Plot 3: Scatter Plot with Size Encoding by Total Tickets
+scatter_plot_sized = alt.Chart(violation_analysis_filtered).mark_circle().encode(
+    x='avg_fine:Q',
+    y='repayment_rate:Q',
+    size='total_tickets:Q',
+    tooltip=['violation_description:N', 'avg_fine:Q', 'repayment_rate:Q', 'total_tickets:Q']
+).properties(
+    title='Scatter Plot: Fine Amount vs. Repayment Rate (Size by Total Tickets)'
+)
+
+# Display the plots
+scatter_plot.show()
+scatter_plot_colored.show()
+scatter_plot_sized.show()
+```
+
+# Question 3
+
+Recommended Plot: Scatter Plot with Color Coding
+Why This Plot?
+
+Clear Insight: It shows the relationship between fine amounts and repayment rates.
+Volume Highlight: Color coding indicates how many tickets were issued for each violation type.
+Easy to Read: Simple and accessible for quick understanding.
+
+This plot helps the City Clerk see how higher fines may impact repayment rates and where revenue opportunities lie.
+
+## Understanding the structure of the data and summarizing it
+
+# Question 1
+
+```{python}
+
+# Filter for violations with at least 100 citations
+violation_counts = data['violation_description'].value_counts()
+common_violations = violation_counts[violation_counts >= 100].index
+
+# Filter the original data to only include those common violations
+common_violations_data = data[data['violation_description'].isin(common_violations)]
+
+# Calculate the increase in fine for unpaid tickets
+common_violations_data['fine_increase'] = common_violations_data['fine_level2_amount'] - common_violations_data['fine_level1_amount']
+
+# Find violations that do not double in price
+non_doubling_violations = common_violations_data[common_violations_data['fine_increase'] < common_violations_data['fine_level1_amount']]
+
+# Group by violation description and calculate the amount each ticket increases if unpaid
+non_doubling_summary = non_doubling_violations.groupby('violation_description')['fine_increase'].mean().reset_index()
+
+# Display the results
+print(non_doubling_summary)
+
+```
+
+# Question 2
+
+```{python}
+import matplotlib.pyplot as plt
+import networkx as nx
+
+# Create a directed graph for Notice Level Process
+G = nx.DiGraph()
+
+# Add nodes and edges
+G.add_edges_from([
+    ("Notice Issued", "Second Notice"),
+    ("Notice Issued", "Paid"),
+    ("Second Notice", "Final Notice"),
+    ("Second Notice", "Contested"),
+    ("Final Notice", "Court Hearing"),
+    ("Final Notice", "Collections"),
+    ("Contested", "Contested"),
+    ("Contested", "Dismissed")
+])
+
+# Draw the graph
+pos = nx.spring_layout(G)
+plt.figure(figsize=(10, 6))
+nx.draw(G, pos, with_labels=True, arrows=True, node_size=3000, node_color='lightblue', font_size=10, font_weight='bold', arrowstyle='-|>', arrowsize=20)
+plt.title("Notice Level Process Flow Diagram")
+plt.show()
+
+
+### Ticket Queue Process Flow Diagram
+
+
+# Create a directed graph for Ticket Queue Process
+G = nx.DiGraph()
+
+# Add nodes and edges
+G.add_edges_from([
+    ("New Ticket", "Contested Queue"),
+    ("New Ticket", "Paid Queue"),
+    ("Contested Queue", "Pending Review"),
+    ("Pending Review", "Dismissed")
+])
+
+# Draw the graph
+pos = nx.spring_layout(G)
+plt.figure(figsize=(10, 6))
+nx.draw(G, pos, with_labels=True, arrows=True, node_size=3000, node_color='lightgreen', font_size=10, font_weight='bold', arrowstyle='-|>', arrowsize=20)
+plt.title("Ticket Queue Process Flow Diagram")
+plt.show()
+
+```
+
+```{python}
+
+import pandas as pd
+import altair as alt
+
+# Sample the data to avoid exceeding the row limit
+sampled_data = data.sample(n=5000, random_state=42)  # Adjust n as needed
+
+# Identify the ten most common violations
+violation_counts = sampled_data['violation_description'].value_counts()
+top_violations = violation_counts.head(10).index.tolist()
+
+# Create a new column to categorize violations
+sampled_data['violation_label'] = sampled_data['violation_description'].apply(lambda x: x if x in top_violations else 'Other')
+
+# Create the scatter plot with labels
+scatter_plot_1 = alt.Chart(sampled_data).mark_point().encode(
+    x='fine_level1_amount:Q',
+    y='fraction_paid:Q',
+    color='violation_label:N',
+    tooltip=['violation_description:N', 'fraction_paid:Q']
+).properties(
+    title='Scatter Plot of Fine Amount vs. Fraction Paid with Top Violations'
+).interactive()
+
+# Add text labels
+text_labels_1 = scatter_plot_1.mark_text(
+    align='left',
+    baseline='middle',
+    dx=5,
+    fontSize=10
+).encode(
+    text='violation_label:N'
+)
+
+# Combine the scatter plot with labels
+final_plot_1 = scatter_plot_1 + text_labels_1
+final_plot_1
+
+```
+
+## Extra Credit
+
+# Question 1
+
+```{python}
+
+# Step 1: Group by 'violation_code' and count unique violation descriptions
+violation_counts = data.groupby('violation_code')['violation_description'].nunique().reset_index()
+violation_counts.columns = ['violation_code', 'unique_descriptions']
+
+# Step 2: Identify violation codes with multiple descriptions
+multiple_descriptions = violation_counts[violation_counts['unique_descriptions'] > 1]
+
+# Step 3: Find the most common description for each violation code
+most_common_descriptions = data.groupby(['violation_code', 'violation_description']).size().reset_index(name='count')
+most_common = most_common_descriptions.loc[most_common_descriptions.groupby('violation_code')['count'].idxmax()]
+
+# Step 4: Merge to get the most common description for those codes with multiple descriptions
+most_common = most_common.merge(multiple_descriptions, on='violation_code', how='inner')
+
+# Create a new column in the original data to store the most common description
+data = data.merge(most_common[['violation_code', 'violation_description']], on='violation_code', how='left', suffixes=('', '_most_common'))
+
+# Step 5: Print the three codes with the most observations
+top_3_codes = most_common['violation_code'].value_counts().head(3)
+print("Three violation codes with the most observations and multiple descriptions:")
+print(top_3_codes)
+
+```
